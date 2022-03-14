@@ -208,6 +208,8 @@ class TSNodeLowering : public TSNodeLoweringInterface {
 
   TSOpVector LowerBatchNorm(
       const torch_lazy_tensors::ir::ops::TSNativeBatchNormForward* node) {
+    //- func: native_batch_norm     (Tensor input, Tensor? weight, Tensor? bias, Tensor? running_mean, Tensor? running_var, bool training, float momentum, float eps) -> (Tensor, Tensor, Tensor)   
+    //- func: _batch_norm_impl_index(Tensor input, Tensor? weight, Tensor? bias, Tensor? running_mean, Tensor? running_var, bool training, float momentum, float eps, bool cudnn_enabled) -> (Tensor, Tensor, Tensor, Tensor, int)
     std::vector<torch::jit::NamedValue> arguments;
     for (size_t i = 0; i < 5; ++i) {
       arguments.emplace_back(loctx()->GetOutputOp(node->operand(i)));
@@ -215,15 +217,27 @@ class TSNodeLowering : public TSNodeLoweringInterface {
     arguments.emplace_back(node->training());
     arguments.emplace_back(node->momentum());
     arguments.emplace_back(node->eps());
-    return LowerBuiltin(node, arguments);
+
+    bool use_cudnn = (at::globalContext().userEnabledCuDNN() &&
+      torch::lazy::getBackend()->EagerFallbackDeviceType() == at::kCUDA);
+    arguments.emplace_back(use_cudnn);
+    TSOpVector result = LowerBuiltin(at::aten::_batch_norm_impl_index, arguments);
+    result.pop_back();
+    result.pop_back();
+    return result;
   }
 
   TSOpVector LowerBatchNormBackward(
       const torch_lazy_tensors::ir::ops::TSNativeBatchNormBackward* node) {
+    //- func: native_batch_norm_backward                        (Tensor grad_out, Tensor input, Tensor? weight, Tensor? running_mean, Tensor? running_var, Tensor? save_mean, Tensor? save_invstd, bool train, float eps, bool[3] output_mask) -> (Tensor, Tensor, Tensor)
+    //- func: _batch_norm_impl_index_backward(int impl_index, Tensor input, Tensor grad_output, Tensor? weight, Tensor? running_mean, Tensor? running_var, Tensor? save_mean, Tensor? save_var_transform, bool train, float eps, bool[3] output_mask, Tensor reservedSpace) -> (Tensor, Tensor, Tensor)
     std::vector<torch::jit::NamedValue> arguments;
-    for (size_t i = 0; i < 3; ++i) {
-      arguments.emplace_back(loctx()->GetOutputOp(node->operand(i)));
-    }
+    bool use_cudnn = (at::globalContext().userEnabledCuDNN() &&
+      torch::lazy::getBackend()->EagerFallbackDeviceType() == at::kCUDA);
+    arguments.emplace_back(use_cudnn ? 1 : 0);
+    arguments.emplace_back(loctx()->GetOutputOp(node->operand(1)));
+    arguments.emplace_back(loctx()->GetOutputOp(node->operand(0)));
+    arguments.emplace_back(loctx()->GetOutputOp(node->operand(2)));
     const auto& operands = node->operands();
     c10::optional<at::Tensor> null_arg;
     if (operands.size() == 5) {
@@ -236,7 +250,8 @@ class TSNodeLowering : public TSNodeLoweringInterface {
     arguments.emplace_back(node->training());
     arguments.emplace_back(node->eps());
     arguments.emplace_back(node->output_mask());
-    return LowerBuiltin(node, arguments);
+    arguments.emplace_back(loctx()->GetOutputOp(node->operand(0))); //reservedSpace
+    return LowerBuiltin(at::aten::_batch_norm_impl_index_backward, arguments);
   }
 
   TSOpVector LowerCast(const torch::lazy::Cast* node) {
