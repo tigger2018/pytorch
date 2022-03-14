@@ -3097,6 +3097,10 @@
   dispatch:
     CompositeExplicitAutograd: mkldnn_convolution
 
+- func: mkldnn_convolution_transpose(Tensor self, Tensor weight, Tensor? bias, int[] padding, int[] output_padding, int[] stride, int[] dilation, int groups) -> Tensor
+  dispatch:
+    CompositeExplicitAutograd: mkldnn_convolution_transpose
+
 - func: miopen_batch_norm(Tensor input, Tensor weight, Tensor? bias, Tensor? running_mean, Tensor? running_var, bool training, float exponential_average_factor, float epsilon) -> (Tensor, Tensor, Tensor)
   dispatch:
     CUDA: miopen_batch_norm
